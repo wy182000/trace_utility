@@ -120,121 +120,60 @@ int main(int argc, const char * argv[]) {
                     XRObjectAllocInstrument *allocInstrument = (XRObjectAllocInstrument *)instrument;
                     // 4 contexts: Statistics, Call Trees, Allocations List, Generations.
                     [allocInstrument._topLevelContexts[2] display];
+                    static NSMutableDictionary<NSNumber*, PFTCallTreeNode *> * (^ const dictrionaryTree)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) { // Helper function to collect all tree nodes.
+                        NSMutableDictionary *nodes = [NSMutableDictionary dictionary];
+                        if (rootNode) {
+                            [nodes setObject:rootNode forKey:[NSNumber numberWithUnsignedLongLong:[rootNode address]]];
+                            for (PFTCallTreeNode *node in rootNode.children) {
+                                [nodes setValuesForKeysWithDictionary:dictrionaryTree(node)];
+                            }
+                        }
+                        return nodes;
+                    };
+                    XRBacktraceRepository *backtraceRepository = [run backtraceRepository];
+                    PFTPersistentSymbols *symbols = TUIvar(backtraceRepository, _persistentSymbols);
+                    PFTCallTreeNode *root = [backtraceRepository _newTreeRoot];
                     XRManagedEventArrayController *arrayController = TUIvar(TUIvar(allocInstrument, _objectListController), _ac);
-                    NSMutableDictionary<NSNumber *, NSNumber *> *sizeGroupedByTime = [NSMutableDictionary dictionary];
+                    NSString *filePath = [NSHomeDirectory() stringByAppendingPathComponent:@"test.txt"];
+                    NSFileHandle* file =[NSFileHandle fileHandleForWritingAtPath:filePath];
                     for (XRObjectAllocEvent *event in arrayController.arrangedObjects) {
-                        NSNumber *time = @(event.timestamp / NSEC_PER_SEC);
-                        NSNumber *size = @(sizeGroupedByTime[time].integerValue + event.size);
-                        sizeGroupedByTime[time] = size;
-                    }
-                    NSArray<NSNumber *> *sortedTime = [sizeGroupedByTime.allKeys sortedArrayUsingComparator:^(NSNumber *time1, NSNumber *time2) {
-                        return [sizeGroupedByTime[time2] compare:sizeGroupedByTime[time1]];
-                    }];
-                    NSByteCountFormatter *byteFormatter = [[NSByteCountFormatter alloc]init];
-                    byteFormatter.countStyle = NSByteCountFormatterCountStyleBinary;
-                    for (NSNumber *time in sortedTime) {
-                        NSString *size = [byteFormatter stringForObjectValue:sizeGroupedByTime[time]];
-                        TUPrint(@"%@ %@\n", time, size);
-                    }
-                } else if ([instrumentID isEqualToString:@"com.apple.dt.coreanimation-fps"]) {
-                    // Core Animation FPS: print out all FPS data samples.
-                    // 2 contexts: Measurements, Statistics
-                    XRContext *context = contexts[0];
-                    [context display];
-                    XRAnalysisCoreTableViewController *controller = TUIvar(context.container, _tabularViewController);
-                    XRAnalysisCorePivotArray *array = controller._currentResponse.content.rows;
-                    XREngineeringTypeFormatter *formatter = TUIvarCast(array.source, _filter, XRAnalysisCoreTableQuery * const).fullTextSearchSpec.formatter;
-                    [array access:^(XRAnalysisCorePivotArrayAccessor *accessor) {
-                        [accessor readRowsStartingAt:0 dimension:0 block:^(XRAnalysisCoreReadCursor *cursor) {
-                            while (XRAnalysisCoreReadCursorNext(cursor)) {
-                                BOOL result = NO;
-                                XRAnalysisCoreValue *object = nil;
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 0, &object);
-                                NSString *timestamp = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 2, &object);
-                                double fps = result ? [object.objectValue doubleValue] : 0;
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 3, &object);
-                                double gpu = result ? [object.objectValue doubleValue] : 0;
-                                TUPrint(@"%@ %2.0f FPS %4.1f%% GPU\n", timestamp, fps, gpu);
+                        id category = event.categoryName;
+                        uint64 address = event.address;
+                        id eventTypeName = event.eventTypeName;
+                        NSNumber *time = @(event.timestamp / NSEC_PER_USEC);
+                        NSNumber *size = @(event.size);
+                        id result = [NSMutableString stringWithFormat:@"0x%qx,%@,%@,%@,%@", address, category,eventTypeName,time,size];
+                        if (event.backtraceIdentifier > 0) {
+                            XRRawBacktrace* backtrace = event.backtrace;
+                            int traceCount = backtrace.count;
+                            if (traceCount > 0) [result appendString:@","];
+                            long kernelFrameCount = [backtrace kernelFrameCount];
+                            if (kernelFrameCount > 0) {
                             }
-                        }];
-                    }];
-                } else if ([instrumentID isEqualToString:@"com.apple.dt.network-connections"]) {
-                    // Connections: print out connection history with protocol, addresses and bytes transferred.
-                    // 4 contexts: Summary By Process, Summary By Interface, History, Active Connections
-                    XRContext *context = contexts[2];
-                    [context display];
-                    XRAnalysisCoreTableViewController *controller = TUIvar(context.container, _tabularViewController);
-                    XRAnalysisCorePivotArray *array = controller._currentResponse.content.rows;
-                    XREngineeringTypeFormatter *formatter = TUIvarCast(array.source, _filter, XRAnalysisCoreTableQuery * const).fullTextSearchSpec.formatter;
-                    [array access:^(XRAnalysisCorePivotArrayAccessor *accessor) {
-                        [accessor readRowsStartingAt:0 dimension:0 block:^(XRAnalysisCoreReadCursor *cursor) {
-                            while (XRAnalysisCoreReadCursorNext(cursor)) {
-                                BOOL result = NO;
-                                XRAnalysisCoreValue *object = nil;
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 4, &object);
-                                NSString *interface = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 5, &object);
-                                NSString *protocol = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 6, &object);
-                                NSString *local = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 7, &object);
-                                NSString *remote = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 10, &object);
-                                NSString *bytesIn = result ? [formatter stringForObjectValue:object] : @"";
-                                result = XRAnalysisCoreReadCursorGetValue(cursor, 12, &object);
-                                NSString *bytesOut = result ? [formatter stringForObjectValue:object] : @"";
-                                TUPrint(@"%@ %@ %@<->%@, %@ in, %@ out\n", interface, protocol, local, remote, bytesIn, bytesOut);
-                            }
-                        }];
-                    }];
-                } else if ([instrumentID isEqualToString:@"com.apple.xray.instrument-type.activity"]) {
-                    // Activity Monitor
-                    XRContext *context = contexts[0];
-                    [context display];
-                    XRAnalysisCoreTableViewController *controller = TUIvar(context.container, _tabularViewController);
-                    XRTime duration = run.timeRange.length;
-                    for (XRTime time = 0; time < duration; time += NSEC_PER_SEC) {
-                        [controller setDocumentInspectionTime:time];
-                        XRAnalysisCorePivotArray *array = controller._currentResponse.content.rows;
-                        XREngineeringTypeFormatter *formatter = TUIvarCast(array.source, _filter, XRAnalysisCoreTableQuery * const).fullTextSearchSpec.formatter;
-                        [array access:^(XRAnalysisCorePivotArrayAccessor *accessor) {
-                            [accessor readRowsStartingAt:0 dimension:0 block:^(XRAnalysisCoreReadCursor *cursor) {
-                                SInt64 columnCount = XRAnalysisCoreReadCursorColumnCount(cursor);
-                                while (XRAnalysisCoreReadCursorNext(cursor)) {
-                                    BOOL result = NO;
-                                    XRAnalysisCoreValue *object = nil;
-                                    NSMutableString *string = [NSMutableString string];
-                                    for (SInt64 column = 0; column < columnCount; column++) {
-                                        result = XRAnalysisCoreReadCursorGetValue(cursor, column, &object);
-                                        [string appendString:result ? [formatter stringForObjectValue:object] : @""];
-                                        [string appendFormat:@", "];
-                                    }
-                                    TUPrint(@"%@", string);
+                            id library;
+                            for(int i = 0; i < traceCount; i++) {
+                                unsigned long long * frame = backtrace.frames + i;
+                                unsigned long long value = *frame;
+                                if (i == traceCount - 1) {
+                                    library = [backtraceRepository libraryForAddress:value];
                                 }
-                            }];
-                        }];
+                                id symbol = [symbols symbolDataForAddress:value isKernelSymbol:false];
+                                if (symbol != nil) {
+                                    [result appendString:[symbol symbolName]];
+                                } else {
+                                    [result appendFormat:@"0x%qx", value];
+                                }
+                                [result appendString:@"\n"];
+                            }
+                            if (library != nil) {
+                                [result appendFormat:@",%@", [library ownerName]];
+                            }
+                        }
+                        [result appendString:@"\n"];
+                        [file writeData:[result dataUsingEncoding:NSUTF8StringEncoding]];
+                        //[file seekToEndOfFile];
                     }
-                } else if ([instrumentID isEqualToString:@"com.apple.xray.instrument-type.homeleaks"]) {
-
-                    XRLeaksRun *leaksRun = (XRLeaksRun *)run;
-                    for (XRLeak *leak in leaksRun.allLeaks) {
-                        DVT_VMUClassInfo *dvt = TUIvar(leak, _layout);
-                        NSDictionary *parsedLeak = @{
-                            @"name": leak.name != nil ? leak.name : @"",
-                            @"description": dvt != nil && dvt.description ? dvt.description : @"",
-                            @"size": @(leak.size),
-                            @"count": @(leak.count),
-                            @"isCycle": @(leak.inCycle),
-                            @"isRootLeak": @(leak.isRootLeak),
-                            @"allocationTimestamp": @(leak.allocationTimestamp),
-                            @"displayAddress": leak.displayAddress != nil ? leak.displayAddress : @"",
-                            @"debugDescription": dvt != nil && dvt.debugDescription ? dvt.debugDescription : @"",
-                        };
-                        NSString *name = dvt != nil && dvt.description ? dvt.description : parsedLeak[@"name"];
-                        TUPrint(@"Leaked %@x times: %@", parsedLeak[@"count"], name);
-                    }
-
+                    [file closeFile];
                 } else {
                     TUPrint(@"Data processor has not been implemented for this type of instrument.\n");
                 }

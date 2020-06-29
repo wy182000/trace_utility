@@ -35,6 +35,7 @@ typedef struct { XRTime start, length; } XRTimeRange;
 - (SInt64)runNumber;
 - (NSString *)displayName;
 - (XRTimeRange)timeRange;
+- (id)backtraceRepository;
 @end
 
 @interface PFTInstrumentType : NSObject
@@ -155,10 +156,16 @@ XRContext *XRContextFromDetailNode(XRAnalysisCoreDetailViewController *detailCon
 
 @interface XRAnalysisCoreProjectionViewController : NSViewController <XRSearchTarget>
 @end
+/*
+@interface PFTSymbolData : NSObject
+- (NSString*)symbolName;
+@end
+ */
 
 @interface PFTCallTreeNode : NSObject
 - (NSString *)libraryName;
 - (NSString *)symbolName;
+- (NSString *)name;
 - (UInt64)address;
 - (NSArray *)symbolNamePath; // Call stack
 - (instancetype)root;
@@ -178,8 +185,20 @@ XRContext *XRContextFromDetailNode(XRAnalysisCoreDetailViewController *detailCon
 - (Float64)parentWeightPercent:(UInt64)index; // parent.weight / root.weight
 @end
 
-@interface XRBacktraceRepository : NSObject
+@interface PFTPersistentSymbols : NSObject
+- (id)symbolDataForAddress:(unsigned long long)arg1 isKernelSymbol:(bool)arg2;
+@end
+
+@interface PFTOwnerData : NSObject
+- (id)ownerName;
+@end
+
+@interface XRBacktraceRepository : NSObject{
+    PFTPersistentSymbols *_persistentSymbols;
+}
 - (PFTCallTreeNode *)rootNode;
+- (PFTCallTreeNode *)_newTreeRoot;
+- (id)libraryForAddress:(unsigned long long)arg1;
 @end
 
 @interface XRMultiProcessBacktraceRepository : XRBacktraceRepository
@@ -255,6 +274,9 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
 @end
 
 @interface XRRawBacktrace : NSObject
+- (unsigned int)count;
+- (unsigned long long *)frames;
+- (long)kernelFrameCount;
 @end
 
 @interface XRManagedEvent : NSObject
@@ -275,7 +297,13 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
 - (UInt64)address;
 - (UInt64)slot;
 - (UInt64)data;
+- (UInt32)backtraceIdentifier;
 - (XRRawBacktrace *)backtrace;
+@end
+
+@interface XRLegacyObjectAllocEvent : XRObjectAllocEvent
+- (NSString *)categoryName;
+- (id)backtrance;
 @end
 
 @interface XRObjectAllocEventViewController : NSObject {
@@ -287,6 +315,7 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
     XRObjectAllocEventViewController *_objectListController;
 }
 - (NSArray<XRContext *> *)_topLevelContexts;
+- (id)_callTreeView;
 @end
 
 // MARK: - Memory leaks
