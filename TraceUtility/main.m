@@ -25,8 +25,61 @@ static void __attribute__((constructor)) hook() {
     method_setImplementation(NSBundle_mainBundle, (IMP)NSBundle_mainBundle_replaced);
 }
 
+static void printClass(const char * _Nonnull name) {
+    id c = objc_getClass(name);
+    if (c != nil) {
+        uint outCount;
+        Method *methods = class_copyMethodList(c, &outCount);
+        TUPrint(@"Methods:\n");
+        for (int i = 0; i < outCount; i++)
+        {
+            Method method = methods[i];
+            NSString *methodName = [NSString stringWithUTF8String:method_getName(method)];
+            TUPrint(methodName);
+        }
+        TUPrint(@"\nProperties:\n");
+        objc_property_t *properties = class_copyPropertyList(c, &outCount);
+        for (int i = 0; i < outCount; i++)
+        {
+            objc_property_t property = properties[i];
+            NSString *propertyName = [NSString stringWithUTF8String:property_getName(property)];
+            TUPrint(propertyName);
+        }
+        TUPrint(@"\nVars:\n");
+        Ivar * vars = class_copyIvarList(c, &outCount);
+        for (int i = 0; i < outCount; i++)
+        {
+            Ivar var = vars[i];
+            NSString *varName = [NSString stringWithUTF8String:ivar_getName(var)];
+            TUPrint(varName);
+        }
+    }
+}
+
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
+        static NSMutableArray<PFTCallTreeNode *> * (^ const flattenTree)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) { // Helper function to collect all tree nodes.
+            NSMutableArray *nodes = [NSMutableArray array];
+            if (rootNode) {
+                [nodes addObject:rootNode];
+                for (PFTCallTreeNode *node in rootNode.children) {
+                    [nodes addObjectsFromArray:flattenTree(node)];
+                }
+            }
+            return nodes;
+        };
+        static NSMutableDictionary<NSNumber*, PFTCallTreeNode *> * (^ const dictrionaryTree)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) { // Helper function to collect all tree nodes.
+            NSMutableDictionary *nodes = [NSMutableDictionary dictionary];
+            if (rootNode) {
+                [nodes setObject:rootNode forKey:[NSNumber numberWithUnsignedLongLong:[rootNode address]]];
+                for (PFTCallTreeNode *node in rootNode.children) {
+                    [nodes setValuesForKeysWithDictionary:dictrionaryTree(node)];
+                }
+            }
+            return nodes;
+        };
+        
         // Required. Each instrument is a plugin and we have to load them before we can process their data.
         DVTInitializeSharedFrameworks();
         [DVTDeveloperPaths initializeApplicationDirectoryName:@"Instruments"];
@@ -45,6 +98,31 @@ int main(int argc, const char * argv[]) {
             return 1;
         }
         NSString *tracePath = arguments[1];
+        NSString *basePath = [arguments[0] stringByDeletingLastPathComponent];
+        //basePath = NSHomeDirectory();
+        NSString *outputFileName = @"result.csv";
+        XRTime startTime = 0;
+        XRTime endTime = 0;
+        BOOL liveOnly = true;
+        for (int i = 1; i < arguments.count; i++) {
+            NSArray *components = [arguments[i] componentsSeparatedByString:@"="];
+            if (components.count == 2) {
+                if ([components[0]  isEqual: @"output"]){
+                    outputFileName = components[1];
+                } else if ([components[0] isEqual:@"liveOnly"]) {
+                    liveOnly = [components[1] boolValue];
+                    startTime = [components[1] intValue];
+                } else if ([components[0] isEqual:@"startTime"]) {
+                    startTime = [components[1] intValue];
+                } else if ([components[0] isEqual:@"endTime"]) {
+                    endTime = [components[1] intValue];
+                }
+            }
+        }
+        NSString *outputPath = [basePath stringByAppendingPathComponent:outputFileName];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:outputPath]) {
+            [[NSFileManager defaultManager] createFileAtPath:outputPath contents:nil attributes:nil];
+        }
         NSError *error = nil;
         PFTTraceDocument *document = [[PFTTraceDocument alloc]initWithContentsOfURL:[NSURL fileURLWithPath:tracePath] ofType:@"com.apple.instruments.trace" error:&error];
         if (error) {
@@ -100,16 +178,6 @@ int main(int argc, const char * argv[]) {
                     [context display];
                     XRAnalysisCoreCallTreeViewController *controller = TUIvar(context.container, _callTreeViewController);
                     XRBacktraceRepository *backtraceRepository = TUIvar(controller, _backtraceRepository);
-                    static NSMutableArray<PFTCallTreeNode *> * (^ const flattenTree)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) { // Helper function to collect all tree nodes.
-                        NSMutableArray *nodes = [NSMutableArray array];
-                        if (rootNode) {
-                            [nodes addObject:rootNode];
-                            for (PFTCallTreeNode *node in rootNode.children) {
-                                [nodes addObjectsFromArray:flattenTree(node)];
-                            }
-                        }
-                        return nodes;
-                    };
                     NSMutableArray<PFTCallTreeNode *> *nodes = flattenTree(backtraceRepository.rootNode);
                     [nodes sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(terminals)) ascending:NO]]];
                     for (PFTCallTreeNode *node in nodes) {
@@ -118,61 +186,67 @@ int main(int argc, const char * argv[]) {
                 } else if ([instrumentID isEqualToString:@"com.apple.xray.instrument-type.oa"]) {
                     // Allocations: print out the memory allocated during each second in descending order of the size.
                     XRObjectAllocInstrument *allocInstrument = (XRObjectAllocInstrument *)instrument;
+                    XRObjectAllocRun *allocRun = (XRObjectAllocRun *)run;
+                    if (startTime != 0 || endTime != 0) {
+                        XRTimeRange timeRange = [run timeRange];
+                        XRTimeRange selectedTimeRange = {startTime * NSEC_PER_MSEC, timeRange.length};
+                        if (endTime != 0) {
+                            selectedTimeRange.length = (endTime - startTime) * NSEC_PER_MSEC;
+                        }
+                        [allocRun setSelectedTimeRange:selectedTimeRange];
+                    }
                     // 4 contexts: Statistics, Call Trees, Allocations List, Generations.
                     [allocInstrument._topLevelContexts[2] display];
-                    static NSMutableDictionary<NSNumber*, PFTCallTreeNode *> * (^ const dictrionaryTree)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) { // Helper function to collect all tree nodes.
-                        NSMutableDictionary *nodes = [NSMutableDictionary dictionary];
-                        if (rootNode) {
-                            [nodes setObject:rootNode forKey:[NSNumber numberWithUnsignedLongLong:[rootNode address]]];
-                            for (PFTCallTreeNode *node in rootNode.children) {
-                                [nodes setValuesForKeysWithDictionary:dictrionaryTree(node)];
-                            }
-                        }
-                        return nodes;
-                    };
                     XRBacktraceRepository *backtraceRepository = [run backtraceRepository];
                     PFTPersistentSymbols *symbols = TUIvar(backtraceRepository, _persistentSymbols);
-                    PFTCallTreeNode *root = [backtraceRepository _newTreeRoot];
                     XRManagedEventArrayController *arrayController = TUIvar(TUIvar(allocInstrument, _objectListController), _ac);
-                    NSString *filePath = [NSHomeDirectory() stringByAppendingPathComponent:@"test.txt"];
-                    NSFileHandle* file =[NSFileHandle fileHandleForWritingAtPath:filePath];
+                    NSFileHandle* file =[NSFileHandle fileHandleForWritingAtPath:outputPath];
+                    int index = 0;
                     for (XRObjectAllocEvent *event in arrayController.arrangedObjects) {
+                        BOOL isLive = [allocRun eventIsLiveInCurrentTimeRange:event];
+                        if (liveOnly && !isLive) continue;
                         id category = event.categoryName;
                         uint64 address = event.address;
-                        id eventTypeName = event.eventTypeName;
                         NSNumber *time = @(event.timestamp / NSEC_PER_USEC);
                         NSNumber *size = @(event.size);
-                        id result = [NSMutableString stringWithFormat:@"0x%qx,%@,%@,%@,%@", address, category,eventTypeName,time,size];
+                        id result = [NSMutableString stringWithFormat:@"%d,0x%qx,%@,%@,%hhd,%@",index,address,category,time,isLive,size];
+                        index++;
                         if (event.backtraceIdentifier > 0) {
                             XRRawBacktrace* backtrace = event.backtrace;
                             int traceCount = backtrace.count;
-                            if (traceCount > 0) [result appendString:@","];
                             long kernelFrameCount = [backtrace kernelFrameCount];
                             if (kernelFrameCount > 0) {
                             }
                             id library;
+                            id backtraceString = [NSMutableString stringWithUTF8String:"\""];
                             for(int i = 0; i < traceCount; i++) {
                                 unsigned long long * frame = backtrace.frames + i;
                                 unsigned long long value = *frame;
-                                if (i == traceCount - 1) {
-                                    library = [backtraceRepository libraryForAddress:value];
-                                }
                                 id symbol = [symbols symbolDataForAddress:value isKernelSymbol:false];
                                 if (symbol != nil) {
-                                    [result appendString:[symbol symbolName]];
+                                    [backtraceString appendString:[symbol symbolName]];
                                 } else {
-                                    [result appendFormat:@"0x%qx", value];
+                                    [backtraceString appendFormat:@"0x%qx", value];
                                 }
-                                [result appendString:@"\n"];
+                                if (i == traceCount - 1) {
+                                    library = [backtraceRepository libraryForAddress:value];
+                                } else {
+                                    [backtraceString appendString:@"\n"];
+                                }
                             }
+                            [backtraceString appendString:@"\""];
                             if (library != nil) {
-                                [result appendFormat:@",%@", [library ownerName]];
+                                [result appendFormat:@",%@", [library libraryName]];
                             }
+                            [result appendFormat:@",%@", backtraceString];
                         }
                         [result appendString:@"\n"];
                         [file writeData:[result dataUsingEncoding:NSUTF8StringEncoding]];
                         //[file seekToEndOfFile];
                     }
+                    uint64 offset = [file offsetInFile];
+                    [file truncateFileAtOffset:offset];
+                    [file synchronizeFile];
                     [file closeFile];
                 } else {
                     TUPrint(@"Data processor has not been implemented for this type of instrument.\n");

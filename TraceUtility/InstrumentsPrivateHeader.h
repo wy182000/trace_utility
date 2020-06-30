@@ -36,6 +36,10 @@ typedef struct { XRTime start, length; } XRTimeRange;
 - (NSString *)displayName;
 - (XRTimeRange)timeRange;
 - (id)backtraceRepository;
+- (double)startTime;
+- (double)endTime;
+- (void)setStart:(double)arg1;
+- (void)setEnd:(double)arg1;
 @end
 
 @interface PFTInstrumentType : NSObject
@@ -190,7 +194,7 @@ XRContext *XRContextFromDetailNode(XRAnalysisCoreDetailViewController *detailCon
 @end
 
 @interface PFTOwnerData : NSObject
-- (id)ownerName;
+- (id)libraryName;
 @end
 
 @interface XRBacktraceRepository : NSObject{
@@ -279,6 +283,12 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
 - (long)kernelFrameCount;
 @end
 
+@interface XRObjectAllocRun : XRRun
+- (BOOL)eventIsLiveInCurrentTimeRange:(id)arg1;
+- (XRTimeRange)selectedTimeRange;
+- (void)setSelectedTimeRange:(XRTimeRange)arg1;
+@end
+
 @interface XRManagedEvent : NSObject
 - (UInt32)identifier;
 @end
@@ -299,6 +309,7 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
 - (UInt64)data;
 - (UInt32)backtraceIdentifier;
 - (XRRawBacktrace *)backtrace;
+- (id)extendedData;
 @end
 
 @interface XRLegacyObjectAllocEvent : XRObjectAllocEvent
