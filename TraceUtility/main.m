@@ -116,6 +116,8 @@ int main(int argc, const char * argv[]) {
                     startTime = [components[1] intValue];
                 } else if ([components[0] isEqual:@"endTime"]) {
                     endTime = [components[1] intValue];
+                } else {
+                    TUPrint(@"invalid argument: %@, value: %@\n", components[0], components[1]);
                 }
             }
         }
