@@ -99,11 +99,13 @@ int main(int argc, const char * argv[]) {
         }
         NSString *tracePath = arguments[1];
         NSString *basePath = [arguments[0] stringByDeletingLastPathComponent];
+        NSString *traceFile = [tracePath lastPathComponent];
         //basePath = NSHomeDirectory();
-        NSString *outputFileName = @"result.csv";
+        NSString *outputFileName = [NSString stringWithFormat:@"%@.csv", [traceFile stringByDeletingPathExtension]];
         XRTime startTime = 0;
         XRTime endTime = 0;
         BOOL liveOnly = true;
+        BOOL combine = true;
         for (int i = 1; i < arguments.count; i++) {
             NSArray *components = [arguments[i] componentsSeparatedByString:@"="];
             if (components.count == 2) {
@@ -111,7 +113,8 @@ int main(int argc, const char * argv[]) {
                     outputFileName = components[1];
                 } else if ([components[0] isEqual:@"liveOnly"]) {
                     liveOnly = [components[1] boolValue];
-                    startTime = [components[1] intValue];
+                } else if ([components[0] isEqual:@"combine"]) {
+                    combine = [components[1] boolValue];
                 } else if ([components[0] isEqual:@"startTime"]) {
                     startTime = [components[1] intValue];
                 } else if ([components[0] isEqual:@"endTime"]) {
@@ -201,24 +204,20 @@ int main(int argc, const char * argv[]) {
                     PFTPersistentSymbols *symbols = TUIvar(backtraceRepository, _persistentSymbols);
                     XRManagedEventArrayController *arrayController = TUIvar(TUIvar(allocInstrument, _objectListController), _ac);
                     NSFileHandle* file =[NSFileHandle fileHandleForWritingAtPath:outputPath];
+                    NSDictionary<NSString*, AllocInfo*> *allocInfoSet = [NSMutableDictionary dictionary];
                     int index = 0;
                     for (XRObjectAllocEvent *event in arrayController.arrangedObjects) {
                         BOOL isLive = [allocRun eventIsLiveInCurrentTimeRange:event];
                         if (liveOnly && !isLive) continue;
-                        id category = event.categoryName;
-                        uint64 address = event.address;
-                        NSNumber *time = @(event.timestamp / NSEC_PER_USEC);
-                        NSNumber *size = @(event.size);
-                        id result = [NSMutableString stringWithFormat:@"%d,0x%qx,%@,%@,%hhd,%@",index,address,category,time,isLive,size];
-                        index++;
-                        if (event.backtraceIdentifier > 0) {
-                            XRRawBacktrace* backtrace = event.backtrace;
-                            int traceCount = backtrace.count;
+                        XRRawBacktrace* backtrace = event.backtrace;
+                        int traceCount = backtrace.count;
+                        id backtraceString = [NSMutableString string];
+                        id library;
+                        if (event.backtraceIdentifier > 0 && traceCount > 0) {
                             long kernelFrameCount = [backtrace kernelFrameCount];
                             if (kernelFrameCount > 0) {
+                                TUPrint(@"kernel frame count more than 0, %ld\n", kernelFrameCount);
                             }
-                            id library;
-                            id backtraceString = [NSMutableString stringWithUTF8String:"\""];
                             for(int i = 0; i < traceCount; i++) {
                                 unsigned long long * frame = backtrace.frames + i;
                                 unsigned long long value = *frame;
@@ -234,15 +233,42 @@ int main(int argc, const char * argv[]) {
                                     [backtraceString appendString:@"\n"];
                                 }
                             }
-                            [backtraceString appendString:@"\""];
-                            if (library != nil) {
-                                [result appendFormat:@",%@", [library libraryName]];
-                            }
-                            [result appendFormat:@",%@", backtraceString];
+                        } else {
+                            [backtraceString appendString:@"<Allocated Prior To Attach>"];
                         }
-                        [result appendString:@"\n"];
-                        [file writeData:[result dataUsingEncoding:NSUTF8StringEncoding]];
-                        //[file seekToEndOfFile];
+                        AllocInfo *info = [[AllocInfo alloc] init];
+                        info.callstack = backtraceString;
+                        info.isLive = isLive;
+                        info.category = event.categoryName;
+                        info.address = event.address;
+                        info.time = event.timestamp / NSEC_PER_USEC;
+                        info.size = event.size;
+                        info.count = 1;
+                        if (library != nil) {
+                            info.library = [library libraryName];
+                        }
+                        if (combine) {
+                            AllocInfo *lastInfo = [allocInfoSet valueForKey:backtraceString];
+                            if (lastInfo == nil)
+                            {
+                                [allocInfoSet setValue:info forKey:backtraceString];
+                            } else {
+                                lastInfo.size += info.size;
+                                lastInfo.count += info.count;
+                            }
+                        } else {
+                            id result = [info ToString:index];
+                            [file writeData:[result dataUsingEncoding:NSUTF8StringEncoding]];
+                        }
+                        index++;
+                    }
+                    if (combine) {
+                        index = 0;
+                        for (AllocInfo *info in [allocInfoSet allValues]) {
+                            id result = [info ToString:index];
+                            [file writeData:[result dataUsingEncoding:NSUTF8StringEncoding]];
+                            index++;
+                        }
                     }
                     uint64 offset = [file offsetInFile];
                     [file truncateFileAtOffset:offset];

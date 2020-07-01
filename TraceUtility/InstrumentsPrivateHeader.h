@@ -329,6 +329,34 @@ BOOL XRAnalysisCoreReadCursorGetValue(XRAnalysisCoreReadCursor *cursor, UInt8 co
 - (id)_callTreeView;
 @end
 
+@interface AllocInfo : NSObject
+@property uint64 address;
+@property NSString *category;
+@property uint64 time;
+@property BOOL isLive;
+@property uint64 size;
+@property NSString *library;
+@property NSString *callstack;
+@property uint count;
+
+- (NSString*)ToString:(int)index;
+@end
+
+@interface AllocInfo () {
+}
+@end
+
+@implementation AllocInfo
+- (id)init {
+    self = [super init];
+    return self;
+}
+
+- (NSString*)ToString:(int)index {
+    return [NSString stringWithFormat:@"%d,0x%qx,\"%@\",%llu,%hhd,%llu,\"%@\",\"%@\",%d\n",index,_address,_category,_time,_isLive,_size,_library,_callstack,_count];
+}
+@end
+
 // MARK: - Memory leaks
 
 @interface XRLeaksRun : XRRun
