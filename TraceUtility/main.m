@@ -31,24 +31,21 @@ static void printClass(const char * _Nonnull name) {
         uint outCount;
         Method *methods = class_copyMethodList(c, &outCount);
         TUPrint(@"Methods:\n");
-        for (int i = 0; i < outCount; i++)
-        {
+        for (int i = 0; i < outCount; i++) {
             Method method = methods[i];
             NSString *methodName = [NSString stringWithUTF8String:method_getName(method)];
             TUPrint(methodName);
         }
         TUPrint(@"\nProperties:\n");
         objc_property_t *properties = class_copyPropertyList(c, &outCount);
-        for (int i = 0; i < outCount; i++)
-        {
+        for (int i = 0; i < outCount; i++) {
             objc_property_t property = properties[i];
             NSString *propertyName = [NSString stringWithUTF8String:property_getName(property)];
             TUPrint(propertyName);
         }
         TUPrint(@"\nVars:\n");
         Ivar * vars = class_copyIvarList(c, &outCount);
-        for (int i = 0; i < outCount; i++)
-        {
+        for (int i = 0; i < outCount; i++) {
             Ivar var = vars[i];
             NSString *varName = [NSString stringWithUTF8String:ivar_getName(var)];
             TUPrint(varName);
@@ -86,11 +83,11 @@ int main(int argc, const char * argv[]) {
         [XRInternalizedSettingsStore configureWithAdditionalURLs:nil];
         [[XRCapabilityRegistry applicationCapabilities]registerCapability:@"com.apple.dt.instruments.track_pinning" versions:NSMakeRange(1, 1)];
         PFTLoadPlugins();
-
+        
         // Instruments has its own subclass of NSDocumentController without overriding sharedDocumentController method.
         // We have to call this eagerly to make sure the correct document controller is initialized.
         [PFTDocumentController sharedDocumentController];
-
+        
         // Open a trace document.
         NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
         if (arguments.count < 2) {
@@ -133,18 +130,18 @@ int main(int argc, const char * argv[]) {
             return 1;
         }
         TUPrint(@"Trace: %@\n", tracePath);
-
+        
         // List some useful metadata of the document.
         XRDevice *device = document.targetDevice;
         TUPrint(@"Device: %@ (%@ %@ %@)\n", device.deviceDisplayName, device.productType, device.productVersion, device.buildVersion);
         PFTProcess *process = document.defaultProcess;
         TUPrint(@"Process: %@ (%@)\n", process.displayName, process.bundleIdentifier);
-
+        
         // Each trace document consists of data from several different instruments.
         XRTrace *trace = document.trace;
         for (XRInstrument *instrument in trace.allInstrumentsList.allInstruments) {
             TUPrint(@"\nInstrument: %@ (%@)\n", instrument.type.name, instrument.type.uuid);
-
+            
             // Each instrument can have multiple runs.
             NSArray<XRRun *> *runs = instrument.allRuns;
             if (runs.count == 0) {
@@ -154,7 +151,7 @@ int main(int argc, const char * argv[]) {
             for (XRRun *run in runs) {
                 TUPrint(@"Run #%@: %@\n", @(run.runNumber), run.displayName);
                 instrument.currentRun = run;
-
+                
                 // Common routine to obtain contexts for the instrument.
                 NSMutableArray<XRContext *> *contexts = [NSMutableArray array];
                 if (![instrument isKindOfClass:XRLegacyInstrument.class]) {
@@ -170,7 +167,7 @@ int main(int argc, const char * argv[]) {
                         detailNode = detailNode.nextSibling;
                     }
                 }
-
+                
                 // Different instruments can have different data structure.
                 // Here are some straightforward example code demonstrating how to process the data from several commonly used instruments.
                 NSString *instrumentID = instrument.type.uuid;
@@ -249,8 +246,7 @@ int main(int argc, const char * argv[]) {
                         }
                         if (combine) {
                             AllocInfo *lastInfo = [allocInfoSet valueForKey:backtraceString];
-                            if (lastInfo == nil)
-                            {
+                            if (lastInfo == nil) {
                                 [allocInfoSet setValue:info forKey:backtraceString];
                             } else {
                                 lastInfo.size += info.size;
@@ -277,7 +273,7 @@ int main(int argc, const char * argv[]) {
                 } else {
                     TUPrint(@"Data processor has not been implemented for this type of instrument.\n");
                 }
-
+                
                 // Common routine to cleanup after done.
                 if (![instrument isKindOfClass:XRLegacyInstrument.class]) {
                     [instrument.viewController instrumentWillBecomeInvalid];
@@ -285,7 +281,7 @@ int main(int argc, const char * argv[]) {
                 }
             }
         }
-
+        
         // Close the document safely.
         [document close];
         PFTClosePlugins();
