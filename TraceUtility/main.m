@@ -103,22 +103,25 @@ int main(int argc, const char * argv[]) {
         XRTime endTime = 0;
         BOOL liveOnly = true;
         BOOL combine = true;
+        BOOL checkFinalLive = true;
         int traceCount = 0;
         for (int i = 1; i < arguments.count; i++) {
             NSArray *components = [arguments[i] componentsSeparatedByString:@"="];
             if (components.count == 2) {
-                if ([components[0]  isEqual: @"output"]){
+                if ([components[0]  compare: @"output" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
                     outputFileName = components[1];
-                } else if ([components[0] isEqual:@"liveOnly"]) {
+                } else if ([components[0]  compare: @"liveOnly" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
                     liveOnly = [components[1] boolValue];
-                } else if ([components[0] isEqual:@"combine"]) {
+                } else if ([components[0]  compare: @"combine" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
                     combine = [components[1] boolValue];
-                } else if ([components[0] isEqual:@"startTime"]) { // ms
+                } else if ([components[0]  compare: @"startTime" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){ //ms
                     startTime = [components[1] intValue];
-                } else if ([components[0] isEqual:@"endTime"]) { // ms
+                } else if ([components[0]  compare: @"endTime" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){ //ms
                     endTime = [components[1] intValue];
-                } else if ([components[0] isEqual:@"traceCount"]) {
+                } else if ([components[0]  compare: @"traceCount" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
                     traceCount = [components[1] intValue];
+                } else if ([components[0]  compare: @"checkFinalLive" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
+                    checkFinalLive = [components[1] boolValue];
                 } else {
                     TUPrint(@"invalid argument: %@, value: %@\n", components[0], components[1]);
                 }
@@ -192,13 +195,15 @@ int main(int argc, const char * argv[]) {
                     // Allocations: print out the memory allocated during each second in descending order of the size.
                     XRObjectAllocInstrument *allocInstrument = (XRObjectAllocInstrument *)instrument;
                     XRObjectAllocRun *allocRun = (XRObjectAllocRun *)run;
-                    if (startTime != 0 || endTime != 0) {
-                        XRTimeRange timeRange = [run timeRange];
-                        XRTimeRange selectedTimeRange = {startTime * NSEC_PER_MSEC, timeRange.length};
-                        if (endTime != 0) {
-                            selectedTimeRange.length = (endTime - startTime) * NSEC_PER_MSEC;
+                    if (!checkFinalLive) {
+                        if (startTime != 0 || endTime != 0) {
+                            XRTimeRange timeRange = [run timeRange];
+                            XRTimeRange selectedTimeRange = {startTime * NSEC_PER_MSEC, timeRange.length};
+                            if (endTime != 0) {
+                                selectedTimeRange.length = (endTime - startTime) * NSEC_PER_MSEC;
+                            }
+                            [allocRun setSelectedTimeRange:selectedTimeRange];
                         }
-                        [allocRun setSelectedTimeRange:selectedTimeRange];
                     }
                     // 4 contexts: Statistics, Call Trees, Allocations List, Generations.
                     [allocInstrument._topLevelContexts[2] display];
@@ -209,6 +214,9 @@ int main(int argc, const char * argv[]) {
                     NSDictionary<NSString*, AllocInfo*> *allocInfoSet = [NSMutableDictionary dictionary];
                     int index = 0;
                     for (XRObjectAllocEvent *event in arrayController.arrangedObjects) {
+                        XRTime time = event.timestamp / NSEC_PER_USEC;
+                        if (startTime > 0 && time < startTime * 1000) continue;
+                        if (endTime > 0 && time > endTime * 1000) continue;
                         BOOL isLive = [allocRun eventIsLiveInCurrentTimeRange:event];
                         if (liveOnly && !isLive) continue;
                         XRRawBacktrace* backtrace = event.backtrace;
