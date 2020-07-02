@@ -103,6 +103,7 @@ int main(int argc, const char * argv[]) {
         XRTime endTime = 0;
         BOOL liveOnly = true;
         BOOL combine = true;
+        int traceCount = 0;
         for (int i = 1; i < arguments.count; i++) {
             NSArray *components = [arguments[i] componentsSeparatedByString:@"="];
             if (components.count == 2) {
@@ -116,6 +117,8 @@ int main(int argc, const char * argv[]) {
                     startTime = [components[1] intValue];
                 } else if ([components[0] isEqual:@"endTime"]) {
                     endTime = [components[1] intValue];
+                } else if ([components[0] isEqual:@"traceCount"]) {
+                    traceCount = [components[1] intValue];
                 } else {
                     TUPrint(@"invalid argument: %@, value: %@\n", components[0], components[1]);
                 }
@@ -209,7 +212,9 @@ int main(int argc, const char * argv[]) {
                         BOOL isLive = [allocRun eventIsLiveInCurrentTimeRange:event];
                         if (liveOnly && !isLive) continue;
                         XRRawBacktrace* backtrace = event.backtrace;
-                        int traceCount = backtrace.count;
+                        if (traceCount <= 0 || traceCount > backtrace.count) {
+                            traceCount = backtrace.count;
+                        }
                         id backtraceString = [NSMutableString string];
                         id library;
                         if (event.backtraceIdentifier > 0 && traceCount > 0) {
@@ -217,6 +222,8 @@ int main(int argc, const char * argv[]) {
                             if (kernelFrameCount > 0) {
                                 TUPrint(@"kernel frame count more than 0, %ld\n", kernelFrameCount);
                             }
+                            int libraryIndex = 1;
+                            if (libraryIndex >= traceCount) libraryIndex = traceCount - 1;
                             for(int i = 0; i < traceCount; i++) {
                                 unsigned long long * frame = backtrace.frames + i;
                                 unsigned long long value = *frame;
@@ -226,9 +233,10 @@ int main(int argc, const char * argv[]) {
                                 } else {
                                     [backtraceString appendFormat:@"0x%qx", value];
                                 }
-                                if (i == traceCount - 1) {
+                                if (i == libraryIndex) {
                                     library = [backtraceRepository libraryForAddress:value];
-                                } else {
+                                }
+                                if (i < traceCount - 1) {
                                     [backtraceString appendString:@"\n"];
                                 }
                             }
