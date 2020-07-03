@@ -101,6 +101,7 @@ int main(int argc, const char * argv[]) {
         NSString *outputFileName = [NSString stringWithFormat:@"%@.csv", [traceFile stringByDeletingPathExtension]];
         XRTime startTime = 0;
         XRTime endTime = 0;
+        XRTime finalTime = 0;
         BOOL liveOnly = true;
         BOOL combine = true;
         BOOL checkFinalLive = true;
@@ -118,6 +119,8 @@ int main(int argc, const char * argv[]) {
                     startTime = [components[1] intValue];
                 } else if ([components[0]  compare: @"endTime" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){ //ms
                     endTime = [components[1] intValue];
+                } else if ([components[0]  compare: @"finalTime" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){ //ms
+                    finalTime = [components[1] intValue];
                 } else if ([components[0]  compare: @"traceCount" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
                     traceCount = [components[1] intValue];
                 } else if ([components[0]  compare: @"checkFinalLive" options:NSCaseInsensitiveSearch|NSNumericSearch] == NSOrderedSame){
@@ -196,12 +199,17 @@ int main(int argc, const char * argv[]) {
                     XRObjectAllocInstrument *allocInstrument = (XRObjectAllocInstrument *)instrument;
                     XRObjectAllocRun *allocRun = (XRObjectAllocRun *)run;
                     if (!checkFinalLive) {
-                        if (startTime != 0 || endTime != 0) {
+                        if (startTime > 0 || endTime > 0) {
                             XRTimeRange timeRange = [run timeRange];
                             XRTimeRange selectedTimeRange = {startTime * NSEC_PER_MSEC, timeRange.length};
-                            if (endTime != 0) {
+                            if (endTime > 0) {
                                 selectedTimeRange.length = (endTime - startTime) * NSEC_PER_MSEC;
                             }
+                            [allocRun setSelectedTimeRange:selectedTimeRange];
+                        }
+                    } else {
+                        if (finalTime > 0) {
+                            XRTimeRange selectedTimeRange = {0, finalTime * NSEC_PER_MSEC};
                             [allocRun setSelectedTimeRange:selectedTimeRange];
                         }
                     }

@@ -56,7 +56,11 @@
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "traceCount=2"
+            argument = "finalTime=1500"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "tracecount=2"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
@@ -68,7 +72,7 @@
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "startTime=1000"
+            argument = "endTime=1000"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
