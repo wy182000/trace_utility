@@ -165,6 +165,7 @@ int main(int argc, const char * argv[]) {
                 
                 // Common routine to obtain contexts for the instrument.
                 NSMutableArray<XRContext *> *contexts = [NSMutableArray array];
+                /*
                 if (![instrument isKindOfClass:XRLegacyInstrument.class]) {
                     XRAnalysisCoreStandardController *standardController = [[XRAnalysisCoreStandardController alloc]initWithInstrument:instrument document:document];
                     instrument.viewController = standardController;
@@ -178,6 +179,7 @@ int main(int argc, const char * argv[]) {
                         detailNode = detailNode.nextSibling;
                     }
                 }
+                 */
                 
                 // Different instruments can have different data structure.
                 // Here are some straightforward example code demonstrating how to process the data from several commonly used instruments.
